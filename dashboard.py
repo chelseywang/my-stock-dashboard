@@ -6,16 +6,22 @@ from plotly.subplots import make_subplots
 import requests
 import json
 
-# --- 0. 設定 Gemini API (雲端/本地 雙模式) ---
+# --- 1. 頁面設定 ---
+st.set_page_config(layout="wide", page_title="AI 操盤戰情室", page_icon="💎")
+
+# --- 0. 設定 Gemini API (安全模式) ---
 try:
-    # 優先嘗試讀取雲端伺服器的秘密鑰匙 (Deploy 時用)
+    # 嘗試從 Streamlit 雲端保險箱讀取 Key
     API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    # 如果找不到(代表在本地電腦)，就用這組預設的
-    API_KEY = "AIzaSyB-1nw64-8cVfWhgSinWQaWOR1rH6Ze0W8"
+    # 如果找不到 (代表在本地或沒設定)，設為空值並顯示警告
+    API_KEY = ""
+    st.sidebar.warning("⚠️ 尚未偵測到 API Key。請在 Streamlit Secrets 設定 'GEMINI_API_KEY'。")
 
 # --- 功能 1: 列出所有可用模型 ---
 def list_available_models():
+    if not API_KEY: return ["Error: No API Key"]
+    
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
     try:
         response = requests.get(url, timeout=10)
@@ -33,11 +39,14 @@ def list_available_models():
     except Exception as e:
         return [f"Error: {str(e)}"]
 
-# --- 功能 2: 狙擊手發問 (美化表格版) ---
+# --- 功能 2: 狙擊手發問 (排版優化版) ---
 def ask_gemini_sniper(prompt, model_name):
+    if not API_KEY: return "❌ 請先設定 API Key 才能使用 AI 功能。"
+
+    # 系統指令：強迫 AI 使用 Markdown 表格排版
     system_instruction = """
     你是一位華爾街頂級 SMC 交易員。
-    請**嚴格依照以下 Markdown 格式**回答，不要改變排版：
+    請**嚴格依照以下 Markdown 格式**回答，不要改變排版，確保表格可以正常顯示：
 
     ### ⚡️ 決策：[買進 / 賣出 / 續抱 / 減倉 / 觀望] (選一個)
     
@@ -66,9 +75,6 @@ def ask_gemini_sniper(prompt, model_name):
             return f"❌ API 錯誤 ({response.status_code}): {response.text}"
     except Exception as e:
         return f"❌ 網路錯誤: {str(e)}"
-
-# --- 1. 頁面設定 ---
-st.set_page_config(layout="wide", page_title="AI 操盤戰情室", page_icon="💎")
 
 # --- 2. 核心數據函數 ---
 def get_stock_data(ticker, timeframe):
@@ -116,11 +122,14 @@ with st.sidebar:
     
     # 模型設定
     default_models = ['gemini-1.5-flash', 'gemini-pro']
-    if st.button("🔄 重整模型列表"):
-        found = list_available_models()
-        if found and not found[0].startswith("Error"):
-            st.session_state['models'] = found
-            st.success("已更新")
+    
+    # 只有當 API Key 存在時才允許掃描
+    if API_KEY:
+        if st.button("🔄 重整模型列表"):
+            found = list_available_models()
+            if found and not found[0].startswith("Error"):
+                st.session_state['models'] = found
+                st.success("已更新")
     
     model_list = st.session_state.get('models', default_models)
     selected_model = st.selectbox("AI 核心:", model_list)
@@ -200,12 +209,10 @@ if ticker:
                 請給出專業 SMC 交易計畫。
                 """
 
-                # 使用 st.status 顯示漂亮的載入動畫
                 with st.status("🧠 AI 正在分析結構與流動性...", expanded=True) as status:
                     response_text = ask_gemini_sniper(data_prompt, selected_model)
                     status.update(label="分析完成！", state="complete", expanded=False)
                 
-                # 用容器裝起來
                 with st.container(border=True):
                     st.markdown(response_text)
 
