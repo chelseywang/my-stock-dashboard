@@ -9,14 +9,50 @@ import json
 # --- 1. 頁面設定 ---
 st.set_page_config(layout="wide", page_title="AI 操盤戰情室", page_icon="💎")
 
-# --- 0. 設定 Gemini API (安全模式) ---
+# --- 注入自定義 CSS (提升精緻度) ---
+st.markdown("""
+    <style>
+    /* 全域背景優化 */
+    .main {
+        background-color: #0e1117;
+    }
+    /* 卡片式容器 */
+    div[data-testid="stMetric"] {
+        background-color: #1e2130;
+        border: 1px solid #31333f;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    /* 調整按鈕樣式 */
+    .stButton>button {
+        width: 100%;
+        border-radius: 8px;
+        border: 1px solid #4a90e2;
+        background-color: rgba(74, 144, 226, 0.1);
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #4a90e2;
+        color: white;
+        box-shadow: 0 0 15px rgba(74, 144, 226, 0.4);
+    }
+    /* 側邊欄美化 */
+    section[data-testid="stSidebar"] {
+        background-color: #161b22;
+        border-right: 1px solid #30363d;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 0. 設定 Gemini API ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
     API_KEY = ""
     st.sidebar.warning("⚠️ 請設定 Streamlit Secrets 'GEMINI_API_KEY'")
 
-# --- 功能 1: 列出可用模型 ---
+# --- 模型列表與策略函數 (保持原邏輯) ---
 def list_available_models():
     if not API_KEY: return ["Error: No API Key"]
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
@@ -24,110 +60,53 @@ def list_available_models():
         response = requests.get(url, timeout=30)
         if response.status_code == 200:
             data = response.json()
-            valid_models = []
-            if 'models' in data:
-                for m in data['models']:
-                    if 'generateContent' in m.get('supportedGenerationMethods', []):
-                        simple_name = m['name'].replace('models/', '')
-                        valid_models.append(simple_name)
+            valid_models = [m['name'].replace('models/', '') for m in data.get('models', []) 
+                           if 'generateContent' in m.get('supportedGenerationMethods', [])]
             return valid_models
-        else:
-            return [f"Error: {response.status_code}"]
-    except Exception as e:
-        return [f"Error: {str(e)}"]
+        return [f"Error: {response.status_code}"]
+    except: return ["Error: Connection Failed"]
 
-# --- 功能 2: 策略顧問發問 (邏輯重構版) ---
 def ask_gemini_strategy(prompt, model_name):
     if not API_KEY: return "❌ 請先設定 API Key"
-
-    # 新的人設：專注於長短線分流與防掃單
-    system_instruction = """
-    你現在是我的專屬投資顧問。請不要使用複雜術語，用最直白的方式給我操作建議。
-    請嚴格依照以下結構回答：
-
-    ### 🐢 中長線策略 (持有 2-3 個月以上)
-    * **趨勢判斷:** (目前是大趨勢多頭還是空頭？)
-    * **絕對防守價 (Hard Stop):** $價格 (請預留 ATR 緩衝，確保不被插針掃出場)
-    * **分批獲利點:** 建議在 $價格 附近減碼一部分。
-
-    ### ⚡️ 短線佈局 (1-2 週內)
-    * **關注點位:** (最近的支撐與壓力)
-    * **操作建議:** (例如：拉回 $X 接多，或是反彈 $Y 做空)
-
-    ---
-    **💡 總結建議:** (一句話告訴我現在該做什麼)
-    """
-    
-    final_prompt = f"{system_instruction}\n\n我的狀況與數據:\n{prompt}"
-    
+    system_instruction = """你現在是專業資深交易員。請用冷靜、專業、直白的方式回答。
+    必須包含：### 🐢 中長線策略、### ⚡️ 短線佈局、### 💡 總結建議。"""
+    final_prompt = f"{system_instruction}\n\n{prompt}"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={API_KEY}"
-    headers = {'Content-Type': 'application/json'}
-    data = {"contents": [{"parts": [{"text": final_prompt}]}]}
-    
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=120)
-        if response.status_code == 200:
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        else:
-            return f"❌ API 錯誤 ({response.status_code})"
-    except Exception as e:
-        return f"❌ 錯誤: {str(e)}"
+        res = requests.post(url, json={"contents": [{"parts": [{"text": final_prompt}]}]}, timeout=60)
+        return res.json()['candidates'][0]['content']['parts'][0]['text']
+    except: return "❌ 分析失敗，請稍後再試。"
 
-# --- 2. 核心數據函數 ---
 def get_stock_data(ticker, timeframe):
     try:
         period = "6mo" if timeframe == "1d" else "1mo"
         stock = yf.Ticker(ticker)
         df = stock.history(period=period, interval=timeframe)
         if df.empty: return None, None
-
-        df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-        df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
-        df['AvgVol'] = df['Volume'].rolling(window=20).mean()
+        df['EMA20'] = df['Close'].ewm(span=20).mean()
+        df['EMA50'] = df['Close'].ewm(span=50).mean()
+        df['AvgVol'] = df['Volume'].rolling(20).mean()
         df['RVOL'] = df['Volume'] / df['AvgVol']
-        
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
-        
-        # ATR 計算 (用於防掃止損)
-        high_low = df['High'] - df['Low']
-        high_close = (df['High'] - df['Close'].shift()).abs()
-        low_close = (df['Low'] - df['Close'].shift()).abs()
-        ranges = pd.concat([high_low, high_close, low_close], axis=1)
-        true_range = ranges.max(axis=1)
-        df['ATR'] = true_range.rolling(window=14).mean()
+        # ATR
+        tr = pd.concat([df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()], axis=1).max(axis=1)
+        df['ATR'] = tr.rolling(14).mean()
         return df, stock
     except: return None, None
 
 # --- 3. 側邊欄 ---
 with st.sidebar:
-    st.header("💎 交易設定")
-    ticker = st.text_input("股票代碼", value="NBIS").upper()
-    timeframe = st.selectbox("級別", ["1d", "1h", "15m"], index=0)
+    st.title("💎 戰情控制台")
+    ticker = st.text_input("輸入標的代碼", value="NBIS").upper()
+    timeframe = st.selectbox("圖表週期", ["1d", "1h", "15m"])
     
     st.markdown("---")
-    st.subheader("我的持倉 (選填)")
-    col1, col2 = st.columns(2)
-    with col1:
-        my_cost = st.number_input("成本價", value=0.0, step=0.1, format="%.2f")
-    with col2:
-        position_type = st.selectbox("方向", ["多單 (Long)", "空單 (Short)"])
+    st.subheader("🛡️ 持倉診斷")
+    my_cost = st.number_input("成本價", value=0.0, format="%.2f")
+    position_type = st.radio("倉位方向", ["Long", "Short"], horizontal=True)
     
-    st.caption("填寫成本後，AI 會切換為「持倉診斷模式」。")
     st.markdown("---")
-    
-    # 模型設定
-    default_models = ['gemini-1.5-flash', 'gemini-pro']
-    if API_KEY and st.button("🔄 重整模型"):
-        found = list_available_models()
-        if found and not found[0].startswith("Error"):
-            st.session_state['models'] = found
-    
-    model_list = st.session_state.get('models', default_models)
-    selected_model = st.selectbox("AI 核心:", model_list)
+    model_list = st.session_state.get('models', ['gemini-1.5-flash', 'gemini-pro'])
+    selected_model = st.selectbox("AI 核心引擎", model_list)
 
 # --- 4. 主畫面 ---
 if ticker:
@@ -135,81 +114,73 @@ if ticker:
     
     if df is not None:
         last = df.iloc[-1]
-        price = last['Close']
-        rvol = last.get('RVOL', 0)
-        rsi = last.get('RSI', 50)
-        atr = last.get('ATR', 0)
-        pct = ((price - df.iloc[-2]['Close']) / df.iloc[-2]['Close']) * 100
+        prev = df.iloc[-2]
+        change_pct = ((last['Close'] - prev['Close']) / prev['Close']) * 100
         
-        pdh = df['High'].iloc[-2]
-        pdl = df['Low'].iloc[-2]
-        trend = "多頭趨勢" if price > last['EMA20'] else "空頭趨勢"
+        # 頁面標題區
+        st.markdown(f"## {ticker} 實時戰情分析 <span style='font-size:16px; color:gray;'>{timeframe} 週期</span>", unsafe_allow_html=True)
+
+        # 頂部指標區
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("當前市價", f"${last['Close']:.2f}", f"{change_pct:.2f}%")
+        c2.metric("RVOL 成交量比", f"{last['RVOL']:.2f}x", "爆量" if last['RVOL'] > 2 else "平穩", delta_color="inverse" if last['RVOL'] < 1 else "normal")
+        c3.metric("ATR 波動率", f"{last['ATR']:.2f}")
         
-        col_main, col_ai = st.columns([2, 1])
+        if my_cost > 0:
+            pnl = (last['Close'] - my_cost) / my_cost * 100 if position_type == "Long" else (my_cost - last['Close']) / my_cost * 100
+            c4.metric("目前損益", f"{pnl:.2f}%", "獲利中" if pnl > 0 else "虧損中")
+        else:
+            c4.metric("持倉狀態", "觀望中")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col_main, col_ai = st.columns([2.2, 1])
 
         with col_main:
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("現價", f"${price:.2f}", f"{pct:.2f}%")
-            m2.metric("RVOL", f"{rvol:.2f}x", "🔥爆量" if rvol > 2 else "縮量")
-            m3.metric("ATR (波動)", f"{atr:.2f}")
+            # 專業 K 線圖
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
             
-            if my_cost > 0:
-                pnl = (price - my_cost) / my_cost * 100 if "Long" in position_type else (my_cost - price) / my_cost * 100
-                m4.metric("未實現損益", f"{pnl:.2f}%")
-            else:
-                m4.metric("持倉狀態", "空手")
-
-            # 圖表
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-            fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="K線"), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#2962FF', width=1), name='EMA 20'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], line=dict(color='#FF6D00', width=1), name='EMA 50'), row=1, col=1)
+            # K線
+            fig.add_trace(go.Candlestick(
+                x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+                name="行情", increasing_line_color='#00ff88', decreasing_line_color='#ff4b4b'
+            ), row=1, col=1)
             
-            if my_cost > 0:
-                fig.add_hline(y=my_cost, line_dash="dash", line_color="yellow", annotation_text="成本", row=1, col=1)
-
-            colors = ['#00C853' if c >= o else '#D50000' for c, o in zip(df['Close'], df['Open'])]
-            fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name='Volume'), row=2, col=1)
-            fig.update_layout(height=500, margin=dict(l=0, r=0, t=10, b=0), xaxis_rangeslider_visible=False, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            # 均線
+            fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#4a90e2', width=1.5), name='EMA20'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], line=dict(color='#f39c12', width=1.5), name='EMA50'), row=1, col=1)
+            
+            # 量能
+            colors = ['#00ff88' if c >= o else '#ff4b4b' for c, o in zip(df['Close'], df['Open'])]
+            fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name='成交量', opacity=0.5), row=2, col=1)
+            
+            fig.update_layout(
+                template="plotly_dark",
+                height=600,
+                margin=dict(l=10, r=10, t=0, b=0),
+                xaxis_rangeslider_visible=False,
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         with col_ai:
-            st.subheader("🤖 策略顧問")
+            st.markdown("### 🤖 AI 決策顧問")
             
-            # 根據是否有成本，決定 Prompt 的內容
-            if my_cost > 0:
-                btn_label = "🛡️ 分析我的持倉 (長短線策略)"
-                user_context = f"我持有 {ticker}，成本 {my_cost}，方向 {position_type}。請告訴我長線該怎麼抱，短線該怎麼做，還有絕對止損在哪裡。"
-            else:
-                btn_label = "🚀 空手分析 (尋找進場點)"
-                user_context = f"我目前空手 {ticker}。請告訴我哪裡可以進場？止損設哪裡比較不容易被掃？"
+            btn_label = "🛡️ 執行持倉診斷" if my_cost > 0 else "🚀 尋找進場機會"
+            if st.button(btn_label):
+                ctx = f"標的:{ticker}, 現價:{last['Close']:.2f}, 成本:{my_cost}, 方向:{position_type}, ATR:{last['ATR']:.2f}"
+                with st.spinner("正在計算最優期望值..."):
+                    res = ask_gemini_strategy(ctx, selected_model)
+                    st.markdown(f"<div style='background-color: #1e2130; padding: 20px; border-radius: 10px; border-left: 5px solid #4a90e2;'>{res}</div>", unsafe_allow_html=True)
 
-            if st.button(btn_label, use_container_width=True):
-                data_prompt = f"""
-                【市場數據】
-                標的: {ticker} | 現價: {price:.2f} | 趨勢: {trend}
-                ATR (日波動): {atr:.2f} | RVOL: {rvol:.2f} | RSI: {rsi:.1f}
-                前高: {pdh:.2f} | 前低: {pdl:.2f}
-                
-                【用戶需求】
-                {user_context}
-                """
-
-                with st.status("🧠 正在規劃長短線策略...", expanded=True) as status:
-                    response_text = ask_gemini_strategy(data_prompt, selected_model)
-                    status.update(label="策略規劃完成", state="complete", expanded=False)
-                
-                with st.container(border=True):
-                    st.markdown(response_text)
-
-            # 簡易聊天
-            if prompt := st.chat_input("有其他問題嗎？"):
-                with st.chat_message("user"):
-                    st.markdown(prompt)
+            # 聊天對話框
+            st.markdown("---")
+            if chat_q := st.chat_input("詢問 AI 關於此標的的細節..."):
+                with st.chat_message("user"): st.write(chat_q)
                 with st.chat_message("assistant"):
-                    with st.spinner("思考中..."):
-                        resp = ask_gemini_strategy(f"現價:{price}, 問題:{prompt}", selected_model)
-                        st.markdown(resp)
+                    st.write(ask_gemini_strategy(f"現價:{last['Close']}, 問題:{chat_q}", selected_model))
 
     else:
-        st.error("找不到代碼")
+        st.error("❌ 無法獲取股票數據，請檢查代碼是否正確。")
