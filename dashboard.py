@@ -1,6 +1,6 @@
 import streamlit as st
 import yfinance as yf
-import pd
+import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
@@ -190,3 +190,4 @@ if ticker:
                 with st.chat_message("assistant"): st.write(ask_gemini_strategy(f"現價:{last['Close']}, 問題:{chat_q}", selected_model))
     else:
         st.error("❌ 無法獲取數據。")
+
