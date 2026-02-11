@@ -167,7 +167,7 @@ if ticker:
             fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#213d91', width=1.5), name='EMA20'), row=1, col=1)
             vol_colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df['Close'], df['Open'])]
             fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=vol_colors, opacity=0.4), row=2, col=1)
-            fig.update_layout(template="plotly_white", height=600, margin=dict(l=0, r=0, t=0, b=0), xaxis_rangeslider_visible=False, showlegend=False)
+            fig.update_layout(template="plotly_white", height=400, margin=dict(l=0, r=0, t=0, b=0), xaxis_rangeslider_visible=False, showlegend=False)
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         with col_ai:
@@ -178,3 +178,4 @@ if ticker:
                     st.markdown(f"<div class='ai-response-box'>{res}</div>", unsafe_allow_html=True)
     else:
         st.error("代碼錯誤。")
+
