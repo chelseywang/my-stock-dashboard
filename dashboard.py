@@ -125,7 +125,7 @@ if ticker:
         last = df.iloc[-1]
         change_pct = ((last['Close'] - df.iloc[-2]['Close']) / df.iloc[-2]['Close']) * 100
         
-        st.markdown(f"<h1 style='color: #1a237e; padding-top: 35px;'>{ticker} // 操盤實時戰情</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='color: #1a237e; padding-top: 30px;'>{ticker} / 操盤實時戰情</h1>", unsafe_allow_html=True)
 
         # 指標卡片
         m1, m2, m3, m4 = st.columns(4)
@@ -157,3 +157,4 @@ if ticker:
                     st.markdown(f"<div class='ai-response-box'>{res}</div>", unsafe_allow_html=True)
     else:
         st.error("代碼錯誤，無法抓取數據。")
+
