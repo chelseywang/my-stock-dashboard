@@ -1,6 +1,6 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
+import pandas as pd 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
@@ -9,58 +9,76 @@ import json
 # --- 1. 頁面設定 ---
 st.set_page_config(layout="wide", page_title="AI 操盤戰情室", page_icon="💎")
 
-# --- 2. 注入專業終端 CSS (深鈦灰與電光藍配色) ---
+# --- 2. 注入自定義 CSS (右側白底專業風 + 左側白字) ---
 st.markdown("""
     <style>
-    /* 1. 垂直空間優化：確保內容上移不留白 */
-    .stApp { margin-top: -70px; background-color: #0b0e11; }
-    .main .block-container { padding-top: 0rem !important; height: 100vh; overflow: hidden; }
+    /* 1. 垂直空間優化與背景分流 */
+    .stApp { 
+        margin-top: -70px; 
+        background-color: #f8f9fa; /* 右側主背景改為淺灰白 */
+    }
+    .main .block-container { 
+        padding-top: 0rem !important; 
+        height: 100vh; 
+        overflow: hidden; 
+    }
 
-    /* 2. 側邊欄：高級深碳灰 */
+    /* 2. 側邊欄：深色背景 + 強制文字純白 */
     section[data-testid="stSidebar"] {
-        background-color: #161a25 !important;
+        background-color: #1a1c22 !important;
         border-right: 1px solid #2d3139;
     }
-    section[data-testid="stSidebar"] label {
-        color: #848e9c !important; 
-        font-size: 13px !important;
-        font-weight: 600 !important;
+    /* 左側側邊欄所有文字改為純白 */
+    section[data-testid="stSidebar"] * {
+        color: #ffffff !important;
     }
-    section[data-testid="stSidebar"] h2 { color: #4a90e2 !important; }
+    section[data-testid="stSidebar"] label {
+        font-size: 14px !important;
+        font-weight: 500 !important;
+    }
 
-    /* 3. 標題：簡潔高白 */
+    /* 3. 標題：深灰色文字（配合白底） */
     .terminal-title {
-        color: #ffffff;
+        color: #212529;
         font-family: 'Inter', sans-serif;
-        font-size: 26px;
+        font-size: 28px;
         font-weight: 800;
         margin-bottom: 15px;
         padding-top: 35px;
-        letter-spacing: 0.5px;
+        letter-spacing: -0.5px;
     }
 
-    /* 4. 指標卡片：深色玻璃質感 (高對比) */
+    /* 4. 指標卡片：亮色卡片 + 陰影感 */
     div[data-testid="stMetric"] {
-        background-color: #1c202b;
-        border: 1px solid #2d3139;
-        padding: 10px 15px !important;
-        border-radius: 4px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        background-color: #ffffff;
+        border: 1px solid #dee2e6;
+        padding: 15px !important;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     }
-    div[data-testid="stMetricValue"] { color: #ffffff !important; font-size: 26px !important; font-weight: 700 !important; }
-    div[data-testid="stMetricLabel"] { color: #848e9c !important; font-size: 12px !important; }
+    div[data-testid="stMetricValue"] { 
+        color: #1a1c22 !important; 
+        font-size: 32px !important; 
+        font-weight: 700 !important; 
+    }
+    div[data-testid="stMetricLabel"] { 
+        color: #6c757d !important; 
+        font-size: 14px !important; 
+    }
 
-    /* 5. AI 回應區：深藍灰色背景 + 高亮側邊 */
+    /* 5. AI 回應區：純白底色 + 專業邊框 */
     .ai-box {
-        background-color: #161a25;
-        border: 1px solid #2d3139;
-        border-left: 5px solid #4a90e2;
-        padding: 20px;
-        height: 420px;
+        background-color: #ffffff;
+        border: 1px solid #dee2e6;
+        border-left: 6px solid #2962ff;
+        padding: 25px;
+        height: 450px;
         overflow-y: auto;
-        color: #e0e3eb;
+        color: #212529;
         font-size: 15px;
-        line-height: 1.7;
+        line-height: 1.8;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
     }
 
     /* 6. 按鈕：電光藍專業風格 */
@@ -68,19 +86,25 @@ st.markdown("""
         background-color: #2962ff !important;
         color: #ffffff !important;
         border: none !important;
-        border-radius: 4px;
+        border-radius: 8px;
         font-weight: 600;
+        padding: 0.6rem 1rem;
         width: 100%;
-        transition: 0.3s;
+        transition: 0.3s ease;
     }
     .stButton>button:hover {
         background-color: #1e4bd8 !important;
-        box-shadow: 0 0 12px rgba(41, 98, 255, 0.4);
+        box-shadow: 0 4px 12px rgba(41, 98, 255, 0.3);
+    }
+    
+    /* 聊天輸入框優化 */
+    .stChatInput {
+        padding-bottom: 20px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 核心功能邏輯 (保持原設定不刪除) ---
+# --- 核心功能邏輯 (維持原設定) ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
@@ -121,10 +145,10 @@ def get_stock_data(ticker, timeframe):
         return df, yf.Ticker(ticker)
     except: return None, None
 
-# --- 3. 側邊欄 ---
+# --- 3. 側邊欄 (設定為深色背景，白字在 CSS 處理) ---
 with st.sidebar:
-    st.markdown("<h2 style='margin-bottom:0;'>COMMAND</h2>", unsafe_allow_html=True)
-    ticker = st.text_input("標的代碼", value="NBIS").upper()
+    st.markdown("<h2 style='color:#ffffff; margin-bottom:0;'>💎 戰情控制台</h2>", unsafe_allow_html=True)
+    ticker = st.text_input("輸入標的代碼", value="NBIS").upper()
     timeframe = st.selectbox("圖表週期", ["1d", "1h", "15m"])
     st.markdown("---")
     st.subheader("🛡️ 持倉診斷")
@@ -141,7 +165,7 @@ if ticker:
         last = df.iloc[-1]
         change_pct = ((last['Close'] - df.iloc[-2]['Close']) / df.iloc[-2]['Close']) * 100
         
-        st.markdown(f"<div class='terminal-title'>{ticker} // REAL-TIME STRATEGY TERMINAL</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='terminal-title'>{ticker} 實時戰情分析 <span style='font-size:16px; font-weight:400; color:#6c757d;'>{timeframe} 週期</span></div>", unsafe_allow_html=True)
 
         # 指標區
         c1, c2, c3, c4 = st.columns(4)
@@ -150,44 +174,45 @@ if ticker:
         c3.metric("ATR 波動率", f"{last['ATR']:.2f}")
         c4.metric("目前損益", f"{((last['Close']-my_cost)/my_cost*100 if position_type=='Long' else (my_cost-last['Close'])/my_cost*100):.2f}%" if my_cost>0 else "觀望中")
 
+        st.markdown("<br>", unsafe_allow_html=True)
+
         col_main, col_ai = st.columns([2.8, 1])
 
         with col_main:
-            # 圖表：美股標準綠漲紅跌配色
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.8, 0.2])
+            # 圖表：白底背景下的專業配色
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.75, 0.25])
             fig.add_trace(go.Candlestick(
                 x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-                name="行情", increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
-                decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'
+                name="行情", increasing_line_color='#00c853', increasing_fillcolor='#00c853',
+                decreasing_line_color='#ff3d00', decreasing_fillcolor='#ff3d00'
             ), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#4a90e2', width=1.2), name='EMA20'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], line=dict(color='#f39c12', width=1.2, dash='dot'), name='EMA50'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], line=dict(color='#2962ff', width=1.5), name='EMA20'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], line=dict(color='#ff9100', width=1.5, dash='dot'), name='EMA50'), row=1, col=1)
             
-            # 成交量顏色同步
-            vol_colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df['Close'], df['Open'])]
-            fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=vol_colors, opacity=0.4, name='成交量'), row=2, col=1)
+            vol_colors = ['#00c853' if c >= o else '#ff3d00' for c, o in zip(df['Close'], df['Open'])]
+            fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=vol_colors, opacity=0.6, name='成交量'), row=2, col=1)
             
             fig.update_layout(
-                template="plotly_dark", height=600, margin=dict(l=0, r=0, t=0, b=0),
-                xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)', showlegend=False
+                template="plotly_white", # 改為白底模板
+                height=600, margin=dict(l=0, r=0, t=0, b=0),
+                xaxis_rangeslider_visible=False, 
+                showlegend=False
             )
-            fig.update_xaxes(gridcolor='#1e222d', zeroline=False)
-            fig.update_yaxes(gridcolor='#1e222d', zeroline=False)
+            fig.update_xaxes(gridcolor='#e9ecef', zeroline=False)
+            fig.update_yaxes(gridcolor='#e9ecef', zeroline=False)
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         with col_ai:
-            st.markdown("<p style='color:#848e9c; font-weight:bold; font-size:12px; margin-top:10px;'>🤖 AI STRATEGIC ADVISOR</p>", unsafe_allow_html=True)
+            st.markdown("<p style='color:#495057; font-weight:bold; font-size:16px; margin-top:5px;'>🤖 AI 決策顧問</p>", unsafe_allow_html=True)
             btn_label = "🛡️ 執行持倉診斷" if my_cost > 0 else "🚀 尋找進場機會"
             if st.button(btn_label):
                 with st.spinner("系統分析中..."):
-                    res = ask_gemini_strategy(f"標的:{ticker}, 現價:{last['Close']:.2f}, 成本:{my_cost}, 方向:{position_type}", selected_model)
+                    res = ask_gemini_strategy(f"標:{ticker}, 價:{last['Close']:.2f}, 本:{my_cost}, 向:{position_type}", selected_model)
                     st.markdown(f"<div class='ai-box'>{res}</div>", unsafe_allow_html=True)
 
-            st.markdown("---")
+            st.markdown("<hr style='border-top:1px solid #dee2e6;'>", unsafe_allow_html=True)
             if chat_q := st.chat_input("詢問 AI 標的細節..."):
                 with st.chat_message("user"): st.write(chat_q)
                 with st.chat_message("assistant"): st.write(ask_gemini_strategy(f"現價:{last['Close']}, 問題:{chat_q}", selected_model))
     else:
         st.error("❌ 無法獲取數據。")
-
